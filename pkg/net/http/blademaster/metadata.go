@@ -61,7 +61,6 @@ func parseMetadataTo(req *http.Request, to metadata.MD) {
 		}
 		to[key] = value
 	}
-	return
 }
 
 func setMetadata(req *http.Request, key string, value interface{}) {

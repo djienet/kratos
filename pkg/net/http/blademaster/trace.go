@@ -95,8 +95,8 @@ func (t *TraceTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	trace.Inject(tr, trace.HTTPFormat, req.Header)
 
 	// FIXME: uncomment after trace sdk is goroutinue safe
-	// ct := clientTracer{tr: tr}
-	// req = req.WithContext(httptrace.WithClientTrace(req.Context(), ct.clientTrace()))
+	ct := clientTracer{tr: tr}
+	req = req.WithContext(httptrace.WithClientTrace(req.Context(), ct.clientTrace()))
 	resp, err := rt.RoundTrip(req)
 
 	if err != nil {

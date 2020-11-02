@@ -3,6 +3,8 @@ package blademaster
 import (
 	"os"
 	"path"
+	"reflect"
+	"runtime"
 )
 
 func lastChar(str string) uint8 {
@@ -156,4 +158,23 @@ func bufApp(buf *[]byte, s string, w int, c byte) {
 		copy(*buf, s[:w])
 	}
 	(*buf)[w] = c
+}
+
+func filterFlags(content string) string {
+	for i, char := range content {
+		if char == ' ' || char == ';' {
+			return content[:i]
+		}
+	}
+	return content
+}
+
+func nameOfFunction(f interface{}) string {
+	return runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name()
+}
+
+func assert1(guard bool, text string) {
+	if !guard {
+		panic(text)
+	}
 }

@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	"github.com/djienet/kratos/pkg/conf/paladin"
-	"github.com/djienet/kratos/pkg/conf/paladin/apollo"
-
 	"github.com/BurntSushi/toml"
 )
 
@@ -71,7 +69,7 @@ func ExampleApolloClient() {
 		```
 	*/
 
-	if err := paladin.Init(apollo.PaladinDriverApollo); err != nil {
+	if err := paladin.Init(); err != nil {
 		panic(err)
 	}
 	var ec exampleConf

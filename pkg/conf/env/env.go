@@ -21,8 +21,8 @@ const (
 // env default value.
 const (
 	// env
-	_region    = "region01"
-	_zone      = "zone01"
+	_region    = "hk"
+	_zone      = "hk01"
 	_deployEnv = "dev"
 )
 

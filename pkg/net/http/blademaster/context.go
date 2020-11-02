@@ -2,18 +2,19 @@ package blademaster
 
 import (
 	"context"
+	"io/ioutil"
 	"math"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"text/template"
 
-	"github.com/djienet/kratos/pkg/net/metadata"
-
 	"github.com/djienet/kratos/pkg/ecode"
 	"github.com/djienet/kratos/pkg/net/http/blademaster/binding"
 	"github.com/djienet/kratos/pkg/net/http/blademaster/render"
+	"github.com/djienet/kratos/pkg/net/metadata"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/types"
@@ -35,12 +36,13 @@ var (
 type Context struct {
 	context.Context
 
-	Request *http.Request
-	Writer  http.ResponseWriter
+	writermem responseWriter
+	Request   *http.Request
+	Writer    ResponseWriter
 
 	// flow control
 	index    int8
-	handlers []HandlerFunc
+	handlers HandlersChain
 
 	// Keys is a key/value pair exclusively for the context of each request.
 	Keys map[string]interface{}
@@ -60,15 +62,56 @@ type Context struct {
 /************************************/
 /********** CONTEXT CREATION ********/
 /************************************/
+
 func (c *Context) reset() {
 	c.Context = nil
-	c.index = -1
+	c.Writer = &c.writermem
+	c.Params = c.Params[0:0]
 	c.handlers = nil
+	c.index = -1
+
 	c.Keys = nil
 	c.Error = nil
 	c.method = ""
 	c.RoutePath = ""
-	c.Params = c.Params[0:0]
+}
+
+// Copy returns a copy of the current context that can be safely used outside the request's scope.
+// This have to be used then the context has to be passed to a goroutine.
+func (c *Context) Copy() *Context {
+	cp := Context{
+		writermem: c.writermem,
+		Request:   c.Request,
+		Params:    c.Params,
+		engine:    c.engine,
+	}
+	cp.writermem.ResponseWriter = nil
+	cp.Writer = &cp.writermem
+	cp.index = _abortIndex
+	cp.handlers = nil
+	cp.Keys = map[string]interface{}{}
+	for k, v := range c.Keys {
+		cp.Keys[k] = v
+	}
+	paramCopy := make([]Param, len(cp.Params))
+	copy(paramCopy, cp.Params)
+	cp.Params = paramCopy
+	return &cp
+}
+
+func (c *Context) GetIndex() int8 {
+	return c.index
+}
+
+// HandlerName returns the main handler's name. For example if the handler is "handleGetUsers()", this
+// function will return "main.handleGetUsers"
+func (c *Context) HandlerName() string {
+	return nameOfFunction(c.handlers.Last())
+}
+
+// Handler returns the main handler.
+func (c *Context) Handler() HandlerFunc {
+	return c.handlers.Last()
 }
 
 /************************************/
@@ -80,9 +123,9 @@ func (c *Context) reset() {
 // See example in godoc.
 func (c *Context) Next() {
 	c.index++
-	for c.index < int8(len(c.handlers)) {
+	s := int8(len(c.handlers))
+	for ; c.index < s; c.index++ {
 		c.handlers[c.index](c)
-		c.index++
 	}
 }
 
@@ -124,9 +167,11 @@ func (c *Context) Set(key string, value interface{}) {
 // Get returns the value for the given key, ie: (value, true).
 // If the value does not exists it returns (nil, false)
 func (c *Context) Get(key string) (value interface{}, exists bool) {
-	c.keysMutex.RLock()
-	value, exists = c.Keys[key]
-	c.keysMutex.RUnlock()
+	if c.Keys != nil {
+		c.keysMutex.RLock()
+		value, exists = c.Keys[key]
+		c.keysMutex.RUnlock()
+	}
 	return
 }
 
@@ -187,6 +232,179 @@ func (c *Context) GetFloat64(key string) (f64 float64) {
 }
 
 /************************************/
+/************ INPUT DATA ************/
+/************************************/
+
+// Param returns the value of the URL param.
+// It is a shortcut for c.Params.ByName(key)
+//		router.GET("/user/:id", func(c *gin.Context) {
+//			// a GET request to /user/john
+//			id := c.Param("id") // id == "john"
+//		})
+func (c *Context) Param(key string) string {
+	return c.Params.ByName(key)
+}
+
+// Query returns the keyed url query value if it exists,
+// othewise it returns an empty string `("")`.
+// It is shortcut for `c.Request.URL.Query().Get(key)`
+// 		GET /path?id=1234&name=Manu&value=
+// 		c.Query("id") == "1234"
+// 		c.Query("name") == "Manu"
+// 		c.Query("value") == ""
+// 		c.Query("wtf") == ""
+func (c *Context) Query(key string) string {
+	value, _ := c.GetQuery(key)
+	return value
+}
+
+// DefaultQuery returns the keyed url query value if it exists,
+// othewise it returns the specified defaultValue string.
+// See: Query() and GetQuery() for further information.
+// 		GET /?name=Manu&lastname=
+// 		c.DefaultQuery("name", "unknown") == "Manu"
+// 		c.DefaultQuery("id", "none") == "none"
+// 		c.DefaultQuery("lastname", "none") == ""
+func (c *Context) DefaultQuery(key, defaultValue string) string {
+	if value, ok := c.GetQuery(key); ok {
+		return value
+	}
+	return defaultValue
+}
+
+// GetQuery is like Query(), it returns the keyed url query value
+// if it exists `(value, true)` (even when the value is an empty string),
+// othewise it returns `("", false)`.
+// It is shortcut for `c.Request.URL.Query().Get(key)`
+// 		GET /?name=Manu&lastname=
+// 		("Manu", true) == c.GetQuery("name")
+// 		("", false) == c.GetQuery("id")
+// 		("", true) == c.GetQuery("lastname")
+func (c *Context) GetQuery(key string) (string, bool) {
+	if values, ok := c.GetQueryArray(key); ok {
+		return values[0], ok
+	}
+	return "", false
+}
+
+// QueryArray returns a slice of strings for a given query key.
+// The length of the slice depends on the number of params with the given key.
+func (c *Context) QueryArray(key string) []string {
+	values, _ := c.GetQueryArray(key)
+	return values
+}
+
+// GetQueryArray returns a slice of strings for a given query key, plus
+// a boolean value whether at least one value exists for the given key.
+func (c *Context) GetQueryArray(key string) ([]string, bool) {
+	req := c.Request
+	if values, ok := req.URL.Query()[key]; ok && len(values) > 0 {
+		return values, true
+	}
+	return []string{}, false
+}
+
+// PostForm returns the specified key from a POST urlencoded form or multipart form
+// when it exists, otherwise it returns an empty string `("")`.
+func (c *Context) PostForm(key string) string {
+	value, _ := c.GetPostForm(key)
+	return value
+}
+
+// DefaultPostForm returns the specified key from a POST urlencoded form or multipart form
+// when it exists, otherwise it returns the specified defaultValue string.
+// See: PostForm() and GetPostForm() for further information.
+func (c *Context) DefaultPostForm(key, defaultValue string) string {
+	if value, ok := c.GetPostForm(key); ok {
+		return value
+	}
+	return defaultValue
+}
+
+// GetPostForm is like PostForm(key). It returns the specified key from a POST urlencoded
+// form or multipart form when it exists `(value, true)` (even when the value is an empty string),
+// otherwise it returns ("", false).
+// For example, during a PATCH request to update the user's email:
+// 		email=mail@example.com  -->  ("mail@example.com", true) := GetPostForm("email") // set email to "mail@example.com"
+// 		email=  			  	-->  ("", true) := GetPostForm("email") // set email to ""
+//							 	-->  ("", false) := GetPostForm("email") // do nothing with email
+func (c *Context) GetPostForm(key string) (string, bool) {
+	if values, ok := c.GetPostFormArray(key); ok {
+		return values[0], ok
+	}
+	return "", false
+}
+
+// PostFormArray returns a slice of strings for a given form key.
+// The length of the slice depends on the number of params with the given key.
+func (c *Context) PostFormArray(key string) []string {
+	values, _ := c.GetPostFormArray(key)
+	return values
+}
+
+// GetPostFormArray returns a slice of strings for a given form key, plus
+// a boolean value whether at least one value exists for the given key.
+func (c *Context) GetPostFormArray(key string) ([]string, bool) {
+	req := c.Request
+	req.ParseForm()
+	req.ParseMultipartForm(32 << 20) // 32 MB
+	if values := req.PostForm[key]; len(values) > 0 {
+		return values, true
+	}
+	if req.MultipartForm != nil && req.MultipartForm.File != nil {
+		if values := req.MultipartForm.Value[key]; len(values) > 0 {
+			return values, true
+		}
+	}
+	return []string{}, false
+}
+
+// ClientIP implements a best effort algorithm to return the real client IP, it parses
+// X-Real-IP and X-Forwarded-For in order to work properly with reverse-proxies such us: nginx or haproxy.
+// Use X-Forwarded-For before X-Real-Ip as nginx uses X-Real-Ip with the proxy's IP.
+func (c *Context) ClientIP() string {
+	if c.engine.ForwardedByClientIP {
+		clientIP := c.requestHeader("X-Forwarded-For")
+		if index := strings.IndexByte(clientIP, ','); index >= 0 {
+			clientIP = clientIP[0:index]
+		}
+		clientIP = strings.TrimSpace(clientIP)
+		if clientIP != "" {
+			return clientIP
+		}
+		clientIP = strings.TrimSpace(c.requestHeader("X-Real-Ip"))
+		if clientIP != "" {
+			return clientIP
+		}
+	}
+
+	if ip, _, err := net.SplitHostPort(strings.TrimSpace(c.Request.RemoteAddr)); err == nil {
+		return ip
+	}
+
+	return ""
+}
+
+// ContentType returns the Content-Type header of the request.
+func (c *Context) ContentType() string {
+	return filterFlags(c.requestHeader("Content-Type"))
+}
+
+// IsWebsocket returns true if the request headers indicate that a websocket
+// handshake is being initiated by the client.
+func (c *Context) IsWebsocket() bool {
+	if strings.Contains(strings.ToLower(c.requestHeader("Connection")), "upgrade") &&
+		strings.ToLower(c.requestHeader("Upgrade")) == "websocket" {
+		return true
+	}
+	return false
+}
+
+func (c *Context) requestHeader(key string) string {
+	return c.Request.Header.Get(key)
+}
+
+/************************************/
 /******** RESPONSE RENDERING ********/
 /************************************/
 
@@ -208,12 +426,31 @@ func (c *Context) Status(code int) {
 	c.Writer.WriteHeader(code)
 }
 
+// Header is a intelligent shortcut for c.Writer.Header().Set(key, value).
+// It writes a header in the response.
+// If value == "", this method removes the header `c.Writer.Header().Del(key)`
+func (c *Context) Header(key, value string) {
+	if value == "" {
+		c.Writer.Header().Del(key)
+	} else {
+		c.Writer.Header().Set(key, value)
+	}
+}
+
+// GetHeader returns value from request headers.
+func (c *Context) GetHeader(key string) string {
+	return c.requestHeader(key)
+}
+
+// GetRawData return stream data.
+func (c *Context) GetRawData() ([]byte, error) {
+	return ioutil.ReadAll(c.Request.Body)
+}
+
 // Render http response with http code by a render instance.
 func (c *Context) Render(code int, r render.Render) {
 	r.WriteContentType(c.Writer)
-	if code > 0 {
-		c.Status(code)
-	}
+	c.Status(code)
 
 	if !bodyAllowedForStatus(code) {
 		return
@@ -226,7 +463,6 @@ func (c *Context) Render(code int, r render.Render) {
 		c.Writer.Write([]byte(cb))
 		c.Writer.Write(_openParen)
 	}
-
 	if err := r.Render(c.Writer); err != nil {
 		c.Error = err
 		return
@@ -272,7 +508,7 @@ func (c *Context) JSONMap(data map[string]interface{}, err error) {
 		}
 	*/
 	writeStatusCode(c.Writer, bcode.Code())
-	data["code"] = bcode.Code()
+	data["status"] = bcode.Code()
 	if _, ok := data["message"]; !ok {
 		data["message"] = bcode.Message()
 	}

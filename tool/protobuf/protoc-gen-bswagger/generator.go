@@ -120,7 +120,8 @@ func (t *swaggerGen) generateSwagger(file *descriptor.FileDescriptorProto) *plug
 			// 所以需要把code msg data 这一级加上
 			resp.Schema.Type = "object"
 			resp.Schema.Properties = &swaggerSchemaObjectProperties{}
-			p := keyVal{Key: "code", Value: &schemaCore{Type: "integer"}}
+			// 兼容 nova1 返回值，将 code 替换为 status
+			p := keyVal{Key: "status", Value: &schemaCore{Type: "integer"}}
 			*resp.Schema.Properties = append(*resp.Schema.Properties, p)
 			p = keyVal{Key: "message", Value: &schemaCore{Type: "string"}}
 			*resp.Schema.Properties = append(*resp.Schema.Properties, p)

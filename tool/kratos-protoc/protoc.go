@@ -128,23 +128,29 @@ func goget(url string) error {
 	return cmd.Run()
 }
 
+// TODO
 func latestKratos() (string, error) {
 	gopath := gopath()
 	ext := path.Join(gopath, "src/github.com/djienet/kratos/third_party")
 	if _, err := os.Stat(ext); !os.IsNotExist(err) {
 		return ext, nil
 	}
+
 	ext = path.Join(gopath, "src/kratos/third_party")
 	if _, err := os.Stat(ext); !os.IsNotExist(err) {
 		return ext, nil
 	}
-	baseMod := path.Join(gopath, "pkg/mod/github.com/djienet")
+
+	// TODO 这里的路径依赖直接写死，如果替换包名会导致工具失败
+	baseMod := path.Join(gopath, "pkg/mod/e.coding.net/azoya")
 	files, err := ioutil.ReadDir(baseMod)
 	if err != nil {
 		return "", err
 	}
+
+	// TODO 包名依赖
 	for i := len(files) - 1; i >= 0; i-- {
-		if strings.HasPrefix(files[i].Name(), "kratos@") {
+		if strings.HasPrefix(files[i].Name(), "nova@") {
 			return path.Join(baseMod, files[i].Name(), "third_party"), nil
 		}
 	}

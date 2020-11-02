@@ -38,7 +38,7 @@ type StructValidator interface {
 	// NOTE: this method is not thread-safe it is intended that these all be registered prior to any validation
 	RegisterValidation(string, validator.Func) error
 
-	//GetValidate return the default validate
+	// GetValidate return the default validate
 	GetValidate() *validator.Validate
 }
 

@@ -94,13 +94,13 @@ func (c *subConn) latencySummary() (latency float64, count int64) {
 
 // statistics is info for log
 type statistics struct {
-	addr     string
-	ewt      int64
-	cs       float64
-	ss       float64
+	addr    string
+	ewt     int64
+	cs      float64
+	ss      float64
 	latency float64
-	cpu      float64
-	req      int64
+	cpu     float64
+	req     int64
 }
 
 // Stats is grpc Interceptor for client to collect server stats

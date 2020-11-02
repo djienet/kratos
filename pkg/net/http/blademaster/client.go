@@ -18,10 +18,10 @@ import (
 	"time"
 
 	"github.com/djienet/kratos/pkg/conf/env"
+	"github.com/djienet/kratos/pkg/net/http/blademaster/resolver"
 	"github.com/djienet/kratos/pkg/net/metadata"
 	"github.com/djienet/kratos/pkg/net/netutil/breaker"
 	xtime "github.com/djienet/kratos/pkg/time"
-
 	"github.com/gogo/protobuf/proto"
 	pkgerr "github.com/pkg/errors"
 )
@@ -78,8 +78,11 @@ func NewClient(c *ClientConfig) *Client {
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 
+	// wraps RoundTripper for resolver
+	resolverTransport := &resolver.ResolverTransport{RoundTripper: originTransport}
+
 	// wraps RoundTripper for tracer
-	client.transport = &TraceTransport{RoundTripper: originTransport}
+	client.transport = &TraceTransport{RoundTripper: resolverTransport}
 	client.client = &xhttp.Client{
 		Transport: client.transport,
 	}
@@ -155,6 +158,20 @@ func (client *Client) NewRequest(method, uri, realIP string, params url.Values) 
 		req.Header.Set(_httpHeaderRemoteIP, realIP)
 	}
 	req.Header.Set(_userAgent, _noKickUserAgent+" "+env.AppID)
+	return
+}
+
+func (client *Client) NewJSONRequest(method, uri string, params interface{}) (req *xhttp.Request, err error) {
+	buf, err := json.Marshal(params)
+	if err != nil {
+		return
+	}
+	req, err = xhttp.NewRequest(method, uri, bytes.NewReader(buf))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json;charset=UTF-8")
+	req.Header.Set("User-Agent", _noKickUserAgent+" "+env.AppID)
 	return
 }
 

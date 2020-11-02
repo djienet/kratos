@@ -11,7 +11,7 @@ var jsonContentType = []string{"application/json; charset=utf-8"}
 
 // JSON common json struct.
 type JSON struct {
-	Code    int         `json:"code"`
+	Code    int         `json:"status"` // 兼容nova1返回值
 	Message string      `json:"message"`
 	TTL     int         `json:"ttl"`
 	Data    interface{} `json:"data,omitempty"`

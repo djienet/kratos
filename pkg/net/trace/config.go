@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/pkg/errors"
 
@@ -13,13 +12,13 @@ import (
 	xtime "github.com/djienet/kratos/pkg/time"
 )
 
-var _traceDSN = "unixgram:///var/run/dapper-collect/dapper-collect.sock"
+var _jaegerTraceDSN = "udp://127.0.0.1:6831"
 
 func init() {
 	if v := os.Getenv("TRACE"); v != "" {
-		_traceDSN = v
+		_jaegerTraceDSN = v
 	}
-	flag.StringVar(&_traceDSN, "trace", _traceDSN, "trace report dsn, or use TRACE env.")
+	flag.StringVar(&_jaegerTraceDSN, "trace", _jaegerTraceDSN, "jaeger trace report dsn, or use TRACE env.")
 }
 
 // Config config.
@@ -53,11 +52,11 @@ func parseDSN(rawdsn string) (*Config, error) {
 
 // TracerFromEnvFlag new tracer from env and flag
 func TracerFromEnvFlag() (Tracer, error) {
-	cfg, err := parseDSN(_traceDSN)
+	cfg, err := parseDSN(_jaegerTraceDSN)
 	if err != nil {
 		return nil, err
 	}
-	report := newReport(cfg.Network, cfg.Addr, time.Duration(cfg.Timeout), cfg.ProtocolVersion)
+	report := newReport(cfg.Addr)
 	return NewTracer(env.AppID, report, cfg.DisableSample), nil
 }
 
@@ -66,10 +65,10 @@ func Init(cfg *Config) {
 	if cfg == nil {
 		// paser config from env
 		var err error
-		if cfg, err = parseDSN(_traceDSN); err != nil {
+		if cfg, err = parseDSN(_jaegerTraceDSN); err != nil {
 			panic(fmt.Errorf("parse trace dsn error: %s", err))
 		}
 	}
-	report := newReport(cfg.Network, cfg.Addr, time.Duration(cfg.Timeout), cfg.ProtocolVersion)
+	report := newReport(cfg.Addr)
 	SetGlobalTracer(NewTracer(env.AppID, report, cfg.DisableSample))
 }

@@ -123,7 +123,6 @@ func Example() {
 
 ```go
 e := bm.DefaultServer(nil)
-// 挂载自适应限流中间件到 bm engine，使用默认配置
 csrf := bm.CSRF([]string{"bilibili.com"}, []string{"/a/api"})
 e.Use(csrf)
 // 或者
@@ -139,7 +138,6 @@ e.GET("/api", csrf, myHandler)
 示例一：
 ```go
 e := bm.DefaultServer(nil)
-// 挂载自适应限流中间件到 bm engine，使用默认配置
 cors := bm.CORS([]string{"github.com"})
 e.Use(cors)
 // 该路由可以默认针对 OPTIONS /api 的跨域请求支持
@@ -149,7 +147,6 @@ e.POST("/api", myHandler)
 示例二：
 ```go
 e := bm.DefaultServer(nil)
-// 挂载自适应限流中间件到 bm engine，使用默认配置
 cors := bm.CORS([]string{"github.com"})
 // e.Use(cors) 不进行全局注册
 e.OPTIONS("/api", cors, myHandler) // 需要单独为/api进行OPTIONS方法注册

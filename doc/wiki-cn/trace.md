@@ -37,6 +37,37 @@ func main(){
 }
 ```
 
-### zipkin效果图
+### jaeger使用
 
-![zipkin](/doc/img/zipkin.jpg)
+1. 前提是需要有一套自己搭建的`jaeger`集群，并且在本地运行`jaeger agent`，可以使用docker来跑测试环境.
+```
+docker run -d --name jaeger \
+  -e COLLECTOR_ZIPKIN_HTTP_PORT=9411 \
+  -p 5775:5775/udp \
+  -p 6831:6831/udp \
+  -p 6832:6832/udp \
+  -p 5778:5778 \
+  -p 16686:16686 \
+  -p 14268:14268 \
+  -p 14250:14250 \
+  -p 9411:9411 \
+  jaegertracing/all-in-one:1.17
+```
+
+然后打开管理界面，输入URL`http://localhost:16686`
+
+
+2. 在业务代码的`main`函数内进行初始化，代码如下：
+
+```go
+// 忽略其他代码
+import "github.com/djienet/kratos/pkg/net/trace/jaeger"
+// 忽略其他代码
+func main(){
+    // 忽略其他代码
+    jaeger.Init(&jaeger.Config{
+        Endpoint: "127.0.0.1:6831",
+    })
+    // 忽略其他代码
+}
+```

@@ -45,4 +45,32 @@ var (
 		Help:      "http client requests code count.",
 		Labels:    []string{"path", "method", "code"},
 	})
+
+	_metricsRequestionTotal = metric.NewCounterVec(&metric.CounterVecOpts{
+		Subsystem: "http",
+		Name:      "requests_total",
+		Help:      "How many HTTP requests processed, partitioned by status code and HTTP request path.",
+		Labels:    []string{"code", "method", "request_path", "host"},
+	})
+
+	_metricsRequestionDurationSeconds = metric.NewSummaryVec(&metric.SummaryVecOpts{
+		Subsystem: "http",
+		Name:      "request_duration_seconds",
+		Help:      "The HTTP request latencies in seconds.",
+		Labels:    []string{"request_path"},
+	})
+
+	_metrcisRequestionSize = metric.NewSummaryVec(&metric.SummaryVecOpts{
+		Subsystem: "http",
+		Name:      "request_size_bytes",
+		Help:      "The HTTP request sizes in bytes.",
+		Labels:    []string{"request_path"},
+	})
+
+	_metricsResponseSize = metric.NewSummaryVec(&metric.SummaryVecOpts{
+		Subsystem: "http",
+		Name:      "response_size_bytes",
+		Help:      "The HTTP response sizes in bytes.",
+		Labels:    []string{"request_path"},
+	})
 )

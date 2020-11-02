@@ -66,6 +66,16 @@ type Handler interface {
 
 // HandlerFunc http request handler function.
 type HandlerFunc func(*Context)
+type HandlersChain []HandlerFunc
+
+// Last returns the last handler in the chain. ie. the last handler is the main own.
+func (c HandlersChain) Last() HandlerFunc {
+	length := len(c)
+	if length > 0 {
+		return c[length-1]
+	}
+	return nil
+}
 
 // ServeHTTP calls f(ctx).
 func (f HandlerFunc) ServeHTTP(c *Context) {
@@ -96,6 +106,7 @@ func (engine *Engine) Start() error {
 
 	log.Info("blademaster: start http listen addr: %s", l.Addr().String())
 	server := &http.Server{
+		Addr:         conf.Addr,
 		ReadTimeout:  time.Duration(conf.ReadTimeout),
 		WriteTimeout: time.Duration(conf.WriteTimeout),
 	}
@@ -146,6 +157,7 @@ type Engine struct {
 	// If no other Method is allowed, the request is delegated to the NotFound
 	// handler.
 	HandleMethodNotAllowed bool
+	ForwardedByClientIP    bool
 
 	allNoRoute  []HandlerFunc
 	allNoMethod []HandlerFunc
@@ -189,8 +201,12 @@ func NewServer(conf *ServerConfig) *Engine {
 	}
 	engine.RouterGroup.engine = engine
 	// NOTE add prometheus monitor location
-	engine.addRoute("GET", "/metrics", monitor())
+	prometheus := NewPrometheus()
+	engine.Use(prometheus.handlerFunc())
+	engine.addRoute("GET", defaultMetricPath, getMetrics())
+
 	engine.addRoute("GET", "/metadata", engine.metadata())
+
 	engine.NoRoute(func(c *Context) {
 		c.Bytes(404, "text/plain", default404Body)
 		c.Abort()
@@ -325,6 +341,7 @@ func (engine *Engine) handleContext(c *Context) {
 	defer cancel()
 	engine.prepareHandler(c)
 	c.Next()
+	c.writermem.WriteHeaderNow()
 }
 
 // SetConfig is used to set the engine configuration.
@@ -369,6 +386,7 @@ func (engine *Engine) Shutdown(ctx context.Context) error {
 	if server == nil {
 		return errors.New("blademaster: no server")
 	}
+
 	return errors.WithStack(server.Shutdown(ctx))
 }
 
@@ -484,14 +502,13 @@ func (engine *Engine) Inject(pattern string, handlers ...HandlerFunc) {
 func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	c := engine.pool.Get().(*Context)
 	c.Request = req
-	c.Writer = w
+	c.writermem.reset(w)
 	c.reset()
 
 	engine.handleContext(c)
 	engine.pool.Put(c)
 }
 
-//newContext for sync.pool
 func (engine *Engine) newContext() *Context {
 	return &Context{engine: engine}
 }

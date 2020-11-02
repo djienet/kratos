@@ -62,7 +62,7 @@ type pattern struct {
 	bufPool sync.Pool
 }
 
-// Render implemet Formater
+// Render implement Formater
 func (p *pattern) Render(w io.Writer, d map[string]interface{}) error {
 	builder := p.bufPool.Get().(*strings.Builder)
 	defer func() {
@@ -77,7 +77,7 @@ func (p *pattern) Render(w io.Writer, d map[string]interface{}) error {
 	return err
 }
 
-// Render implemet Formater as string
+// Render implement Formater as string
 func (p *pattern) RenderString(d map[string]interface{}) string {
 	builder := p.bufPool.Get().(*strings.Builder)
 	defer func() {

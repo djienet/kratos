@@ -5,7 +5,9 @@ import (
 	"time"
 
 	"{{.ModPrefix}}{{.Name}}/internal/service"
-
+	"github.com/djienet/kratos/pkg/conf/env"
+	"github.com/djienet/kratos/pkg/naming"
+	"github.com/djienet/kratos/pkg/naming/discovery"
 	"github.com/djienet/kratos/pkg/log"
 	"github.com/djienet/kratos/pkg/net/rpc/warden"
 )
@@ -21,12 +23,41 @@ func NewApp(svc *service.Service, g *warden.Server) (app *App, closeFunc func(),
 		svc: svc,
 		grpc: g,
 	}
+	regCancel, err := app.registerSelf()
+	if err != nil {
+		log.Error("register discovery error(%v)", err)
+	}
+
 	closeFunc = func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+		if regCancel != nil {
+			regCancel()
+		}
+
 		if err := g.Shutdown(ctx); err != nil {
 			log.Error("grpcSrv.Shutdown error(%v)", err)
 		}
 		cancel()
 	}
+	return
+}
+
+func (app *App) registerSelf() (cancel context.CancelFunc, err error) {
+	if env.DiscoveryNodes == "" {
+		log.Info(`discovery not be enabled. params "-discovery.nodes" or env(DISCOVERY_NODES) not set.`)
+		return
+	}
+
+	dis := discovery.New(nil)
+	inst := &naming.Instance{
+		Zone:     env.Zone,
+		Env:      env.DeployEnv,
+		AppID:    env.AppID,
+		Hostname: env.Hostname,
+		Addrs: []string{
+			"grpc://" + app.grpc.Addr(), // default scheme only support grpc
+		},
+	}
+	cancel, err = dis.Register(context.Background(), inst)
 	return
 }

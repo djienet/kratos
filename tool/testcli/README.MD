@@ -1,7 +1,7 @@
 ## testcli UT运行环境构建工具
 基于 docker-compose 实现跨平台跨语言环境的容器依赖管理方案，以解决运行ut场景下的 (mysql, redis, mc)容器依赖问题。
 
-*这个是testing/lich的二进制工具版本（Go请直接使用库版本：github.com/djienet/kratos/pkg/testing/lich)*
+*这个是testing/lich的二进制工具版本（Go请直接使用库版本：github.com/djienet/kratospkg/testing/lich)*
 
 ### 功能和特性
 - 自动读取 test 目录下的 yaml 并启动依赖
@@ -14,18 +14,18 @@
 
 #### Method 1. With go get
 ```shell
-go get -u github.com/djienet/kratos/tool/testcli
+go get -u github.com/djienet/kratostool/testcli
 $GOPATH/bin/testcli -h
 ```
 #### Method 2. Build with Go
 ```shell
-cd github.com/djienet/kratos/tool/testcli
+cd github.com/djienet/kratostool/testcli
 go build -o $GOPATH/bin/testcli
 $GOPATH/bin/testcli -h
 ```
 #### Method 3. Import with Kratos pkg
 ```Go
-import "github.com/djienet/kratos/pkg/testing/lich"
+import "github.com/djienet/kratospkg/testing/lich"
 ```
 
 ### 构建数据
@@ -121,8 +121,8 @@ import (
     "strings"
     "testing"
  
-    "github.com/djienet/kratos/pkg/conf/paladin"
-    "github.com/djienet/kratos/pkg/testing/lich"
+    "github.com/djienet/kratospkg/conf/paladin"
+    "github.com/djienet/kratospkg/testing/lich"
  )
  
 var (

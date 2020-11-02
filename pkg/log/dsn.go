@@ -24,7 +24,9 @@ func (f *logFilter) Set(value string) error {
 }
 
 func (m verboseModule) String() string {
+	// FIXME strings.Builder
 	var b strings.Builder
+
 	for k, v := range m {
 		b.WriteString(k)
 		b.WriteString(strconv.FormatInt(int64(v), 10))

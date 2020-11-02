@@ -227,6 +227,11 @@ func (s *Server) SetConfig(conf *ServerConfig) (err error) {
 	return nil
 }
 
+// Addr return listen address
+func (s *Server) Addr() string {
+	return s.conf.Addr
+}
+
 // interceptor is a single interceptor out of a chain of many interceptors.
 // Execution is done in left-to-right order, including passing of context.
 // For example ChainUnaryServer(one, two, three) will execute one before two before three, and three

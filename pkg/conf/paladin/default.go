@@ -2,7 +2,6 @@ package paladin
 
 import (
 	"context"
-	"errors"
 	"flag"
 )
 
@@ -24,26 +23,7 @@ func Init(args ...interface{}) (err error) {
 	if confPath != "" {
 		DefaultClient, err = NewFile(confPath)
 	} else {
-		var (
-			driver Driver
-		)
-		argsLackErr := errors.New("lack of remote config center args")
-		if len(args) == 0 {
-			panic(argsLackErr.Error())
-		}
-		argsInvalidErr := errors.New("invalid remote config center args")
-		driverName, ok := args[0].(string)
-		if !ok {
-			panic(argsInvalidErr.Error())
-		}
-		driver, err = GetDriver(driverName)
-		if err != nil {
-			return
-		}
-		DefaultClient, err = driver.New()
-	}
-	if err != nil {
-		return
+		DefaultClient, err = NewOasis()
 	}
 	return
 }

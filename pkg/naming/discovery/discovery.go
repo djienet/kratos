@@ -2,10 +2,14 @@ package discovery
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
+	"net"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -17,8 +21,6 @@ import (
 	"github.com/djienet/kratos/pkg/ecode"
 	"github.com/djienet/kratos/pkg/log"
 	"github.com/djienet/kratos/pkg/naming"
-	http "github.com/djienet/kratos/pkg/net/http/blademaster"
-	xtime "github.com/djienet/kratos/pkg/time"
 )
 
 const (
@@ -49,7 +51,7 @@ var (
 	_builder naming.Builder
 )
 
-// Builder return default discvoery resolver builder.
+// Builder return default discovery resolver builder.
 func Builder() naming.Builder {
 	_once.Do(func() {
 		_builder = New(nil)
@@ -144,12 +146,18 @@ func New(c *Config) (d *Discovery) {
 		delete:     make(chan *appInfo, 10),
 	}
 	// httpClient
-	cfg := &http.ClientConfig{
-		Dial:      xtime.Duration(3 * time.Second),
-		Timeout:   xtime.Duration(40 * time.Second),
-		KeepAlive: xtime.Duration(40 * time.Second),
+	dialer := &net.Dialer{
+		Timeout:   time.Duration(3 * time.Second),
+		KeepAlive: time.Duration(40 * time.Second),
 	}
-	d.httpClient = http.NewClient(cfg)
+	transport := &http.Transport{
+		DialContext:     dialer.DialContext,
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	d.httpClient = &http.Client{
+		Timeout:   40 * time.Second,
+		Transport: transport,
+	}
 	// discovery self
 	resolver := d.Build(_appid)
 	event := resolver.Watch()
@@ -179,7 +187,10 @@ func (d *Discovery) selfproc(resolver naming.Resolver, event <-chan struct{}) {
 }
 
 func (d *Discovery) newSelf(zones map[string][]*naming.Instance) {
+	d.mutex.Lock()
 	ins, ok := zones[d.c.Zone]
+	d.mutex.Unlock()
+
 	if !ok {
 		return
 	}
@@ -214,7 +225,7 @@ func (d *Discovery) newSelf(zones map[string][]*naming.Instance) {
 	d.node.Store(nodes)
 }
 
-// Build disovery resovler builder.
+// Build discovery resolver builder.
 func (d *Discovery) Build(appid string, opts ...naming.BuildOpt) naming.Resolver {
 	r := &Resolve{
 		id:    appid,
@@ -245,7 +256,7 @@ func (d *Discovery) Build(appid string, opts ...naming.BuildOpt) naming.Resolver
 		default:
 		}
 	}
-	log.Info("disocvery: AddWatch(%s) already watch(%v)", appid, ok)
+	log.Info("discovery: AddWatch(%s) already watch(%v)", appid, ok)
 	d.once.Do(func() {
 		go d.serverproc()
 	})
@@ -257,7 +268,7 @@ func (d *Discovery) Scheme() string {
 	return "discovery"
 }
 
-// Resolve discveory resolver.
+// Resolve discovery resolver.
 type Resolve struct {
 	id    string
 	event chan struct{}
@@ -400,17 +411,35 @@ func (d *Discovery) register(ctx context.Context, ins *naming.Instance) (err err
 		params.Set("status", strconv.FormatInt(ins.Status, 10))
 	}
 	params.Set("metadata", string(metadata))
-	if err = d.httpClient.Post(ctx, uri, "", params, &res); err != nil {
+	resp, err := d.httpClient.PostForm(uri, params)
+	if err != nil {
 		d.switchNode()
+		log.Error("discovery: register client.Get(%v)  zone(%s) env(%s) appid(%s) addrs(%v) error(%v)",
+			uri, c.Zone, c.Env, ins.AppID, ins.Addrs, err)
+		return err
+	}
+	defer resp.Body.Close()
+	buf, err := ioutil.ReadAll(resp.Body)
+
+	if err != nil {
+		d.switchNode()
+		log.Error("discovery: register client.Get(%v)  zone(%s) env(%s) appid(%s) addrs(%v) error(%v)",
+			uri, c.Zone, c.Env, ins.AppID, ins.Addrs, err)
+		return err
+	}
+
+	if err = json.Unmarshal(buf, &res); err != nil {
 		log.Error("discovery: register client.Get(%v)  zone(%s) env(%s) appid(%s) addrs(%v) error(%v)",
 			uri, c.Zone, c.Env, ins.AppID, ins.Addrs, err)
 		return
 	}
+
 	if ec := ecode.Int(res.Code); !ecode.Equal(ecode.OK, ec) {
 		log.Warn("discovery: register client.Get(%v)  env(%s) appid(%s) addrs(%v) code(%v)", uri, c.Env, ins.AppID, ins.Addrs, res.Code)
 		err = ec
 		return
 	}
+
 	log.Info("discovery: register client.Get(%v) env(%s) appid(%s) addrs(%s) success", uri, c.Env, ins.AppID, ins.Addrs)
 	return
 }
@@ -428,12 +457,30 @@ func (d *Discovery) renew(ctx context.Context, ins *naming.Instance) (err error)
 	uri := fmt.Sprintf(_renewURL, d.pickNode())
 	params := d.newParams(c)
 	params.Set("appid", ins.AppID)
-	if err = d.httpClient.Post(ctx, uri, "", params, &res); err != nil {
+	resp, err := d.httpClient.PostForm(uri, params)
+	if err != nil {
 		d.switchNode()
+		log.Error("discovery: renew client.Get(%v)  env(%s) appid(%s) hostname(%s) error(%v)",
+			uri, c.Env, ins.AppID, c.Host, err)
+		return err
+	}
+	defer resp.Body.Close()
+
+	buf, err := ioutil.ReadAll(resp.Body)
+
+	if err != nil {
+		d.switchNode()
+		log.Error("discovery: renew client.Get(%v)  env(%s) appid(%s) hostname(%s) error(%v)",
+			uri, c.Env, ins.AppID, c.Host, err)
+		return err
+	}
+
+	if err = json.Unmarshal(buf, &res); err != nil {
 		log.Error("discovery: renew client.Get(%v)  env(%s) appid(%s) hostname(%s) error(%v)",
 			uri, c.Env, ins.AppID, c.Host, err)
 		return
 	}
+
 	if ec := ecode.Int(res.Code); !ecode.Equal(ecode.OK, ec) {
 		err = ec
 		if ecode.Equal(ecode.NothingFound, ec) {
@@ -459,13 +506,29 @@ func (d *Discovery) cancel(ins *naming.Instance) (err error) {
 	uri := fmt.Sprintf(_cancelURL, d.pickNode())
 	params := d.newParams(c)
 	params.Set("appid", ins.AppID)
-	// request
-	if err = d.httpClient.Post(context.TODO(), uri, "", params, &res); err != nil {
+	resp, err := d.httpClient.PostForm(uri, params)
+	if err != nil {
 		d.switchNode()
+		log.Error("discovery cancel client.Get(%v) env(%s) appid(%s) hostname(%s) error(%v)",
+			uri, c.Env, ins.AppID, c.Host, err)
+		return err
+	}
+	defer resp.Body.Close()
+
+	buf, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		d.switchNode()
+		log.Error("discovery cancel client.Get(%v) env(%s) appid(%s) hostname(%s) error(%v)",
+			uri, c.Env, ins.AppID, c.Host, err)
+		return err
+	}
+
+	if err = json.Unmarshal(buf, &res); err != nil {
 		log.Error("discovery cancel client.Get(%v) env(%s) appid(%s) hostname(%s) error(%v)",
 			uri, c.Env, ins.AppID, c.Host, err)
 		return
 	}
+
 	if ec := ecode.Int(res.Code); !ecode.Equal(ecode.OK, ec) {
 		log.Warn("discovery cancel client.Get(%v)  env(%s) appid(%s) hostname(%s) code(%v)",
 			uri, c.Env, ins.AppID, c.Host, res.Code)
@@ -504,12 +567,29 @@ func (d *Discovery) set(ctx context.Context, ins *naming.Instance) (err error) {
 		}
 		params.Set("metadata", string(metadata))
 	}
-	if err = d.httpClient.Post(ctx, uri, "", params, &res); err != nil {
+	resp, err := d.httpClient.PostForm(uri, params)
+	if err != nil {
 		d.switchNode()
+		log.Error("discovery: set client.Get(%v)  zone(%s) env(%s) appid(%s) addrs(%v) error(%v)",
+			uri, conf.Zone, conf.Env, ins.AppID, ins.Addrs, err)
+		return err
+	}
+	defer resp.Body.Close()
+
+	buf, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		d.switchNode()
+		log.Error("discovery: set client.Get(%v)  zone(%s) env(%s) appid(%s) addrs(%v) error(%v)",
+			uri, conf.Zone, conf.Env, ins.AppID, ins.Addrs, err)
+		return err
+	}
+
+	if err = json.Unmarshal(buf, &res); err != nil {
 		log.Error("discovery: set client.Get(%v)  zone(%s) env(%s) appid(%s) addrs(%v) error(%v)",
 			uri, conf.Zone, conf.Env, ins.AppID, ins.Addrs, err)
 		return
 	}
+
 	if ec := ecode.Int(res.Code); !ecode.Equal(ecode.OK, ec) {
 		log.Warn("discovery: set client.Get(%v)  env(%s) appid(%s) addrs(%v)  code(%v)",
 			uri, conf.Env, ins.AppID, ins.Addrs, res.Code)
@@ -608,13 +688,35 @@ func (d *Discovery) polls(ctx context.Context) (apps map[string]*naming.Instance
 	for _, ts := range lastTss {
 		params.Add("latest_timestamp", strconv.FormatInt(ts, 10))
 	}
-	if err = d.httpClient.Get(ctx, uri, "", params, res); err != nil {
+
+	req, _ := http.NewRequest("GET", uri+"?"+params.Encode(), nil)
+	req = req.WithContext(ctx)
+	resp, err := d.httpClient.Do(req)
+	if err != nil {
 		d.switchNode()
+		if ctx.Err() != context.Canceled {
+			log.Error("discovery: client.Get(%s) error(%+v)", uri+"?"+params.Encode(), err)
+		}
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	buf, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		d.switchNode()
+		if ctx.Err() != context.Canceled {
+			log.Error("discovery: client.Get(%s) error(%+v)", uri+"?"+params.Encode(), err)
+		}
+		return nil, err
+	}
+
+	if err = json.Unmarshal(buf, &res); err != nil {
 		if ctx.Err() != context.Canceled {
 			log.Error("discovery: client.Get(%s) error(%+v)", uri+"?"+params.Encode(), err)
 		}
 		return
 	}
+
 	if ec := ecode.Int(res.Code); !ecode.Equal(ecode.OK, ec) {
 		if !ecode.Equal(ecode.NotModified, ec) {
 			log.Error("discovery: client.Get(%s) get error code(%d)", uri+"?"+params.Encode(), res.Code)

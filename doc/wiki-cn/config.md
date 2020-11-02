@@ -11,7 +11,7 @@
 |:----------|:----------|:------|
 | region | REGION | 部署地区，sh-上海、gz-广州、bj-北京 |
 | zone | ZONE | 分布区域，sh001-上海核心、sh004-上海嘉定 |
-| deploy.env | DEPLOY_ENV | dev-开发、fat1-功能、uat-集成、pre-预发、prod-生产 |
+| deploy.env | DEPLOY_ENV | dev-开发、uat-集成、pre-预发、prod-生产 |
 | deploy.color | DEPLOY_COLOR | 服务颜色，blue（测试feature染色请求） |
 | - | HOSTNAME | 主机名，xxx-hostname |
 
