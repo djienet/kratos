@@ -37,9 +37,9 @@ Kratos 是 B 站开源的一套 Go 微服务框架，包含大量微服务相关
       # https://goproxy.cn 是七牛维护的国内镜像代理，若有问题，还可使用官方代理：https://goproxy.io
       go env -w GOPROXY=https://goproxy.cn,direct 
 
-      # 我们使用的是 coding 私有仓库，需设置以域名"e.coding.net"开头的仓库为私有包，不走代理，不校验
+      # 我们使用的是 coding 私有仓库，需设置以域名"github.com"开头的仓库为私有包，不走代理，不校验
       # 若未来迁移至其它私有仓库，也需要设置
-      go env -w GOPRIVATE=e.coding.net
+      go env -w GOPRIVATE=github.com
    ```
 3. 安装 protobuffer 编译器 `protoc`（注意：高版本的 protobuf 会导致引用的 grpc 版本升高，导致编译失败）
    ```
@@ -54,13 +54,13 @@ Kratos 是 B 站开源的一套 Go 微服务框架，包含大量微服务相关
 
 1. 联系管理员申请 github.com/djienet/kratos 私有仓库权限。
 2. 根据访问私有 coding 仓库的方式，设置 git：
-   * 方式一：配置通过私有证书访问 coding 仓库（使用 `git clone git@e.coding.net:azoya/xxx` 方式）。但当我们执行 `go get github.com/djienet/kratos` 安装时，go 默认会使用 `git clone https://e.coding.net/azoya/xxx` 的方式访问目标仓库，因此，需设置 git clone https 私用仓库时强制使用 SSH（git@e.coding.net）协议。
+   * 方式一：配置通过私有证书访问 coding 仓库（使用 `git clone git@github.com:azoya/xxx` 方式）。但当我们执行 `go get github.com/djienet/kratos` 安装时，go 默认会使用 `git clone https://github.com/azoya/xxx` 的方式访问目标仓库，因此，需设置 git clone https 私用仓库时强制使用 SSH（git@github.com）协议。
 
       ``` shell
-         git config --global url.git@e.coding.net:.insteadOf https://e.coding.net/
+         git config --global url.git@github.com:.insteadOf https://github.com/
       ```
 
-   * 方式二：未配置证书访问 coding 仓库，每次克隆仓库时需手动输入用户名/密码（`git clone https://e.coding.net/azoya/xxx` 方式）。需要设置 git 记住用户名密码，因为 `go get github.com/djienet/kratos` 时会屏蔽输入，你无法手动输入用户名密码。
+   * 方式二：未配置证书访问 coding 仓库，每次克隆仓库时需手动输入用户名/密码（`git clone https://github.com/azoya/xxx` 方式）。需要设置 git 记住用户名密码，因为 `go get github.com/djienet/kratos` 时会屏蔽输入，你无法手动输入用户名密码。
 
       ``` shell
          git config --global credential.helper store
